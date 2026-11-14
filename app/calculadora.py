@@ -12,7 +12,7 @@ def sumar(a, b):
 
 def restar(a, b):
     """Devuelve la resta de ``b`` a ``a``."""
-    return a + b
+    return a - b
 
 
 def multiplicar(a, b):
