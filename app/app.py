@@ -47,6 +47,12 @@ def calcular():
     return render_template("index.html", resultado=resultado)
 
 
+@app.get("/health")
+def health():
+    """Health check usado por el Load Balancer. Incluye la versión desplegada."""
+    return {"status": "ok", "version": os.environ.get("APP_VERSION", "local")}
+
+
 if __name__ == "__main__":  # pragma: no cover
     # Servidor de desarrollo: solo escucha en localhost y sin modo debug.
     # En el contenedor la app se sirve con Gunicorn (ver Dockerfile).
