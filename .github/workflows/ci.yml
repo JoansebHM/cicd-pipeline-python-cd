@@ -32,7 +32,8 @@ jobs:
 
       - name: Install dependencies
         # requirements-dev.lock fija todas las dependencias con hashes (generado con uv pip compile)
-        run: pip install --require-hashes --only-binary :all: -r requirements-dev.lock
+        run: |
+          pip install --require-hashes --only-binary :all: -r requirements-dev.lock
 
       - name: Run Black (Formatter)
         run: black app --check  # --check solo verifica, no modifica
