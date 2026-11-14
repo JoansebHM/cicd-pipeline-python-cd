@@ -1,49 +1,74 @@
 # tests/test_app.py
+import re
+
 import pytest
 from app.app import app
 
+
 @pytest.fixture
 def client():
-    app.config['TESTING'] = True
+    app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
 
+
+def post_form(client, data):
+    """Hace GET para obtener el token CSRF y luego envía el formulario con él."""
+    page = client.get("/")
+    token = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1)
+    return client.post("/", data={**data, "csrf_token": token.decode()})
+
+
 def test_index_get(client):
-    response = client.get('/')
+    response = client.get("/")
     assert response.status_code == 200
-    assert b'<!DOCTYPE html>' in response.data  # Assuming the HTML template starts with <!DOCTYPE html>
+    assert b"<!DOCTYPE html>" in response.data
+
 
 def test_index_post_sumar(client):
-    response = client.post('/', data={'num1': '2', 'num2': '3', 'operacion': 'sumar'})
+    response = post_form(client, {"num1": "2", "num2": "3", "operacion": "sumar"})
     assert response.status_code == 200
-    assert b'Resultado: 5.0' in response.data
+    assert b"Resultado: 5.0" in response.data
+
 
 def test_index_post_restar(client):
-    response = client.post('/', data={'num1': '5', 'num2': '3', 'operacion': 'restar'})
+    response = post_form(client, {"num1": "5", "num2": "3", "operacion": "restar"})
     assert response.status_code == 200
-    assert b'Resultado: 2.0' in response.data
+    assert b"Resultado: 2.0" in response.data
+
 
 def test_index_post_multiplicar(client):
-    response = client.post('/', data={'num1': '2', 'num2': '3', 'operacion': 'multiplicar'})
+    response = post_form(
+        client, {"num1": "2", "num2": "3", "operacion": "multiplicar"}
+    )
     assert response.status_code == 200
-    assert b'Resultado: 6.0' in response.data
+    assert b"Resultado: 6.0" in response.data
+
 
 def test_index_post_dividir(client):
-    response = client.post('/', data={'num1': '6', 'num2': '3', 'operacion': 'dividir'})
+    response = post_form(client, {"num1": "6", "num2": "3", "operacion": "dividir"})
     assert response.status_code == 200
-    assert b'Resultado: 2.0' in response.data
+    assert b"Resultado: 2.0" in response.data
+
 
 def test_index_post_dividir_by_zero(client):
-    response = client.post('/', data={'num1': '6', 'num2': '0', 'operacion': 'dividir'})
+    response = post_form(client, {"num1": "6", "num2": "0", "operacion": "dividir"})
     assert response.status_code == 200
-    assert b'Error: No se puede dividir por cero' in response.data
+    assert b"Error: No se puede dividir por cero" in response.data
+
 
 def test_index_post_invalid_operation(client):
-    response = client.post('/', data={'num1': '6', 'num2': '3', 'operacion': 'invalid'})
+    response = post_form(client, {"num1": "6", "num2": "3", "operacion": "invalid"})
     assert response.status_code == 200
-    assert b'Operaci\xc3\xb3n no v\xc3\xa1lida' in response.data
+    assert "Operación no válida".encode() in response.data
+
 
 def test_index_post_invalid_numbers(client):
-    response = client.post('/', data={'num1': 'a', 'num2': 'b', 'operacion': 'sumar'})
+    response = post_form(client, {"num1": "a", "num2": "b", "operacion": "sumar"})
     assert response.status_code == 200
-    assert b'Error: Introduce n\xc3\xbameros v\xc3\xa1lidos' in response.data
+    assert "Error: Introduce números válidos".encode() in response.data
+
+
+def test_index_post_sin_token_csrf_es_rechazado(client):
+    response = client.post("/", data={"num1": "2", "num2": "3", "operacion": "sumar"})
+    assert response.status_code == 400
