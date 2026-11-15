@@ -18,6 +18,10 @@ def browser():
     options.add_argument("--headless")  # Ejecuta sin interfaz gráfica
     options.add_argument("--no-sandbox")  # Necesario para algunos entornos
     options.add_argument("--disable-dev-shm-usage")  # Necesario para algunos entornos
+    # Chrome sube las URL http públicas a https; el ALB solo sirve http (puerto 80)
+    options.add_argument(
+        "--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable"
+    )
     driver = webdriver.Chrome(options=options)
 
     # Opción 2: Firefox (headless)
