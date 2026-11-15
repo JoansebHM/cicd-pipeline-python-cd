@@ -57,6 +57,44 @@ def test_index_post_dividir_by_zero(client):
     assert b"Error: No se puede dividir por cero" in response.data
 
 
+def test_index_post_potencia(client):
+    response = post_form(client, {"num1": "2", "num2": "3", "operacion": "potencia"})
+    assert response.status_code == 200
+    assert b"Resultado: 8.0" in response.data
+
+
+def test_index_post_potencia_cero_exponente_negativo(client):
+    response = post_form(client, {"num1": "0", "num2": "-1", "operacion": "potencia"})
+    assert response.status_code == 200
+    assert b"Error: No se puede dividir por cero" in response.data
+
+
+def test_index_post_potencia_resultado_complejo(client):
+    response = post_form(client, {"num1": "-8", "num2": "0.5", "operacion": "potencia"})
+    assert response.status_code == 200
+    assert "Error: Introduce números válidos".encode() in response.data
+
+
+def test_index_post_potencia_desbordamiento(client):
+    response = post_form(
+        client, {"num1": "10", "num2": "1000", "operacion": "potencia"}
+    )
+    assert response.status_code == 200
+    assert b"Error: El resultado es demasiado grande" in response.data
+
+
+def test_index_post_modulo(client):
+    response = post_form(client, {"num1": "7", "num2": "3", "operacion": "modulo"})
+    assert response.status_code == 200
+    assert b"Resultado: 1.0" in response.data
+
+
+def test_index_post_modulo_por_cero(client):
+    response = post_form(client, {"num1": "5", "num2": "0", "operacion": "modulo"})
+    assert response.status_code == 200
+    assert b"Error: No se puede dividir por cero" in response.data
+
+
 def test_index_post_invalid_operation(client):
     response = post_form(client, {"num1": "6", "num2": "3", "operacion": "invalid"})
     assert response.status_code == 200
