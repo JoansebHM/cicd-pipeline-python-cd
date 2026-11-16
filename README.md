@@ -1,76 +1,129 @@
 ## Integrantes
 
 - Julián Giraldo Chica - Julian-GC
-- Joan Sebastian Herrera Montes - JoansebHM
-- Juan José Henao Aristizábal (**Propietario**) - Juanjoseh99
+- Joan Sebastian Herrera Montes (**Propietario**) - JoansebHM
+- Juan José Henao Aristizábal - Juanjoseh99
 
 ## Evidencias
-https://github.com/Juanjoseh99/entregable-2-cicd/pull/1
-https://github.com/Juanjoseh99/entregable-2-cicd/actions/runs/43615847645
+https://github.com/JoansebHM/cicd-pipeline-python-cd/actions/runs/43735029179
+
+https://github.com/JoansebHM/cicd-pipeline-python-cd/pull/1
+
+Staging: http://calculadora-staging-alb-1577913011.us-east-1.elb.amazonaws.com/
+Production: http://calculadora-production-alb-645745208.us-east-1.elb.amazonaws.com/
+
+![Operación nueva en Producción](docs/evidencias/produccion.png)
+![Target Group de Producción saludable](docs/evidencias/target-groups.png)
+
+## Justificación SonarCloud
+- S6413 (retención de logs corta): Retención de 7 días intencional: es un entorno académico con presupuesto limitado en AWS Academy. Los logs solo se usan para depurar despliegues y no hay requisitos de auditoría.
+- S6258 (ALB sin access_logs): Sin access logs por costo y alcance del taller: requeriría un bucket S3 adicional y permisos que el Learner Lab restringe. La app no maneja información sensible y los logs de aplicación ya quedan en CloudWatch.
+- S5332 (listener HTTP sin cifrado): HTTP intencional: el ambiente es de laboratorio y no tiene dominio propio ni certificado TLS. La app es una calculadora que no maneja datos personales ni credenciales.
 
 ## Preguntas
 
-### I. ¿Qué ventajas le proporciona a un proyecto el uso de un pipeline de CI? Menciona al menos tres ventajas específicas y explica por qué son importantes.
+### I. Explica el flujo completo que implementaste (commit → build-and-test → deploy-staging → test-staging → aprobación → deploy-production → smoke-test-production). Sé específico sobre qué artefacto se mueve entre los jobs, qué hace cada job y qué valida cada tipo de prueba.
 
-Detecta errores temprano. Cada push o PR ejecuta pruebas, Black y la cobertura (≥ 80 %). Si algo falla, el pipeline se detiene. Corregir un bug al momento de escribirlo es más barato que hacerlo en producción.
+Un push o merge a main dispara el pipeline. Los jobs corren en serie, y si uno falla los siguientes no se ejecutan.
+* build-and-test (CI): revisa el formato con Black, pasa los linters con Pylint y Flake8 y corre las pruebas unitarias y de componente con cobertura de al menos 80 %. Valida Terraform con fmt -check y validate. Construye la imagen Docker, la levanta en local y corre las pruebas de aceptación con Selenium. Luego hace el análisis en SonarCloud y publica la imagen en Docker Hub.
+* deploy-staging: con las credenciales de AWS, conecta con el estado remoto en S3 y corre terraform apply con la imagen. Así crea o actualiza el clúster ECS, el servicio, la task definition, el ALB y los security groups. Entrega la URL del ALB al siguiente job.
+* test-staging: consulta /health hasta que responda el SHA nuevo. Después corre las pruebas de aceptación contra la URL pública de Staging. Estas validan los flujos funcionales completos de la calculadora desde el navegador, en un ambiente real de AWS.
+* Aprobación manual: el ambiente production exige que un revisor apruebe. Aquí el pipeline pasa de Despliegue Continuo a Entrega Continua.
+* deploy-production: hace lo mismo que Staging, pero en el workspace production y con la misma imagen que ya pasó las pruebas.
+* smoke-test-production: espera el SHA nuevo y corre las pruebas de humo. Son pruebas rápidas y superficiales que confirman que la app está viva: la página carga, /health responde y la versión desplegada es exactamente el commit esperado.
 
-Calidad consistente. Linters, cobertura y el Quality Gate de SonarCloud se aplican igual a todos los cambios, sin depender de la memoria de cada persona.
+Cada tipo de prueba valida algo distinto:
+* Unitarias: la lógica aislada.
+* De componente: la app Flask y sus rutas.
+* De aceptación: el comportamiento completo desde el punto de vista del usuario.
+* De humo: que el despliegue en Producción quedó sano.
 
-main siempre estable. Con la rama protegida, solo entran PRs con el pipeline en verde. Así hay menos conflictos y el equipo puede trabajar en paralelo.
-
-Artefacto reproducible. La imagen Docker se construye una vez, se prueba y se publica tal cual. Lo que se despliega es lo que se validó.
-
----
-
-### II. ¿Cuál es la diferencia entre una prueba unitaria, una prueba de componente y una prueba de aceptación? Da un ejemplo de algo que probarías con cada una (en el contexto de cualquier aplicación que conozcas, descríbela primero).
- 
-Aplicación: calculadora web en Flask. Tiene un formulario con dos números y una operación, y muestra el resultado.
-Unitaria: prueba una función aislada. Ejemplo: dividir(1, 0) lanza ZeroDivisionError.
-De componente: prueba rutas, lógica y plantilla juntas con el cliente de pruebas de Flask, sin servidor ni navegador. Ejemplo: un POST con 5, 3 y sumar devuelve HTML con 8.
-De aceptación: prueba la app en ejecución como lo haría un usuario, con Selenium contra el contenedor Docker. Ejemplo: el navegador escribe 10 y 2, elige "dividir" y ve 5 en pantalla.
-La unitaria verifica que el cálculo sea correcto. La de componente verifica que las piezas de la app funcionen juntas. La de aceptación verifica que el usuario pueda hacer lo que necesita en la aplicación real.
 
 ---
 
-### III. Describe brevemente qué hace cada uno de los steps principales de tu workflow de GitHub Actions (desde el checkout hasta el push de Docker). Explica el propósito de cada uno (qué hace y para qué se hace).
+### II. ¿Qué ventajas y desventajas encontraste al usar Terraform en vez de crear la infraestructura manualmente desde la consola? ¿Por qué el estado de Terraform se guarda en un bucket S3 y no en tu computador?
 
-Checkout: descarga el código del repositorio para que el pipeline pueda trabajar con él.
-Set up Python: instala Python 3.13 para ejecutar las herramientas y las pruebas.
-Install dependencies: instala las librerías necesarias para el proyecto.
-Black: verifica que el código tenga un formato uniforme.
-Pylint y Flake8: detectan errores y malas prácticas en el código.
-Unit and Component Tests: prueban la lógica y exigen al menos un 80% de cobertura.
-Build Docker image: empaqueta la aplicación en una imagen.
-Start container: ejecuta la imagen para probarla como en producción.
-Acceptance Tests: prueban la aplicación desde el navegador, como lo haría un usuario.
-Show container logs: si algo falla, muestra los logs para diagnosticar.
-Upload Reports: guarda los reportes de pruebas y calidad para revisarlos.
-SonarCloud Scan: analiza la calidad y seguridad del código y bloquea el pipeline si no se cumplen los criterios.
-Login to Docker Hub: se autentica en Docker Hub, solo en main.
-Push Docker image: publica la imagen validada en Docker Hub.
+Ventajas:
 
----
+* La infraestructura queda versionada en Git y se puede revisar en un PR.
+* Es reproducible: el mismo código crea Staging y Producción, cambiando solo el workspace.
+* Se automatiza desde el pipeline y evita errores de clics manuales.
+* plan muestra los cambios antes de aplicarlos.
+* destroy borra todo fácilmente, lo que ayuda a no gastar el presupuesto.
 
-### IV. ¿Qué problemas o dificultades encontraron al implementar este taller? ¿Cómo los solucionaron? Cada integrante describe al menos un problema o aprendizaje propio, identificándose con su nombre.
+Desventajas:
 
-Juan Jose: Como vengo de la ciencia de datos, al principio me costó ver cómo encajaba todo esto en mi trabajo. En software lo que cambia es el código, pero en datos también cambian los datos y los modelos, y eso hace que todo sea menos directo. Lo que me ayudó fue ir paso por paso, buscando el equivalente de cada parte del pipeline en mi día a día: las pruebas, para validar las funciones de limpieza y transformación
-
-Sebastian Herrera: En mi día a día estoy acostumbrado a trabajar con automatizaciones y con el CI mas que todo del proyecto. El único reto que encontré fue entender bien el manejo de credenciales en el yaml porque nunca había trabajado con secretos ni con las propiedades del repositorio.
-
-Julian Giraldo: Por mi trabajo como analista de datos conozco bien la idea de controlar qué información llega a un reporte o dashboard final. Antes de publicar un dato hay que validarlo, revisarlo y asegurarse de que no dañe lo que ya funciona. En GitHub aprendí que esa misma lógica se aplica al código, aunque la herramienta era nueva para mí. Entendí que el pipeline en verde no es un trámite. Es la garantía de que nadie, incluido yo, rompe la versión oficial por un descuido.
+* Los errores son más difíciles de corregir que en la consola.
+* Las credenciales en laboratorio expiran.
+* Si alguien cambia algo a mano en la consola, el estado se desincroniza.
 
 ---
 
-### V. ¿Qué ventajas ofrece construir la imagen Docker, ejecutar las pruebas de aceptación sobre ella y publicar exactamente esa misma imagen, en lugar de simplemente validar el código?
+### III. ¿Qué ventajas y desventajas tiene introducir un entorno de Staging en el pipeline de despliegue a AWS? ¿Cómo impacta esto la velocidad vs. la seguridad del despliegue?
 
-Al construir la imagen Docker, ejecutar las pruebas de aceptación sobre ella y publicar exactamente esa misma imagen, se valida el artefacto real que se despliega (con su Dockerfile, dependencias, versión de Python y configuración), no solo el código fuente. Esto garantiza que lo que pasó las pruebas es idéntico a lo que llega a producción, evita diferencias entre el entorno de desarrollo y el de ejecución, y detecta a tiempo fallos que el código por sí solo no revelaría, como un Dockerfile mal armado, una dependencia faltante o un error de arranque del contenedor. Por otro lado, si se reconstruyera la imagen después de las pruebas, podría cambiar algo como una librería actualizada o una capa distinta y lo publicado ya no sería lo probado.
+Ventajas
+
+*	Los errores se detectan en un entorno de ensayo, antes de que lleguen a los usuarios reales.
+*	Staging es una copia de Producción en AWS, así que se prueba la app y la infraestructura reales (Load Balancer, contenedor, variables), no solo el código.
+*	Si algo falla en Staging, el pipeline se detiene y Producción sigue intacta.
+
+Desventajas
+
+*	El despliegue es más lento, porque hay una etapa y unas pruebas más.
+*	Cuesta más, porque hay que pagar y mantener un segundo entorno en AWS.
+*	El pipeline y la infraestructura son más complejos de mantener.
+*	Staging nunca es 100 % igual a Producción, así que puede dar una falsa sensación de seguridad.
+* Velocidad vs. seguridad: Staging sacrifica algo de velocidad a cambio de más seguridad. Cada cambio tarda más en llegar a Producción, pero con mucho menos riesgo de romperla. En un sistema real, el costo de una caída en Producción suele ser mayor que unos minutos extra de espera.
+
 
 ---
 
-### VI. Sobre el Pull Request de la sección 9: ¿qué pruebas agregaron y qué error de la calculadora detectaría cada una? Con el error intencional, ¿en qué paso falló el pipeline, qué pasos no se ejecutaron y cómo impidieron la protección de main y el pipeline que ese error llegara a main y a Docker Hub?
+### IV. ¿Qué diferencia hay entre las pruebas ejecutadas contra Staging (test-staging) y las ejecutadas contra Producción (smoke-test-production) en tu pipeline? ¿Por qué esta diferencia?
 
-En el Pull Request agregaron dos pruebas. La primera, `test_operaciones_con_decimales`, revisa que sumar, restar, multiplicar y dividir funcionen bien con decimales, y detectaría errores como redondeos o conversiones a entero. La segunda, `test_operaciones_con_dos_negativos`, revisa que los signos se manejen bien cuando ambos números son negativos, y detectaría, por ejemplo, que `restar(-2, -3)` no dé 1 o que `multiplicar(-2, -3)` no dé 6.
+test-staging ejecuta las pruebas de aceptación completas con Selenium. Un navegador real abre la calculadora, escribe números, elige la operación y comprueba que el resultado sea el correcto. Incluye los casos de error, como dividir por cero, y las operaciones nuevas, potencia y módulo. Son pruebas más lentas, de unos 40 segundos en local.
 
-Después se introdujo a propósito el error de que `restar` se cambia `a - b` por `a + b`. El pipeline falló en el paso "Run Unit and Component Tests", porque las pruebas de resta esperaban un resultado y recibieron otro. Como GitHub Actions se detiene en el primer fallo, no se ejecutaron la construcción de la imagen Docker, el arranque del contenedor, las pruebas de aceptación, el análisis de SonarCloud, el login en Docker Hub ni el push de la imagen.
+smoke-test-production ejecuta solo pruebas de humo, que son peticiones HTTP sencillas. Comprueban que la página principal cargue, que /health responda "ok" y que la versión desplegada sea la esperada. Tardan unos segundos y no usan la calculadora.
 
-Con eso el error quedó contenido en dos niveles. La protección de main exige que el job `build-and-test` termine en verde, así que con el check en rojo el PR no se podía fusionar y el código malo nunca llegó a main. Además, el pipeline solo publica en Docker Hub cuando hay un push a main y después de que todas las pruebas pasen. Al fallar antes, no se construye la imagen, y nada defectuoso llegó a Docker Hub.
+**¿Por qué la diferencia?**
+
+En Staging no hay usuarios reales, así que se puede probar a fondo sin riesgo. Si algo falla, el pipeline se detiene y Producción no se toca.
+En Producción sí hay usuarios reales. Por eso solo se hace una verificación rápida y ligera para confirmar que el despliegue quedó vivo y que es la versión correcta, sin simular operaciones ni ensuciar el sistema.
+
+
+---
+
+### V. Considerando un ciclo completo de DevOps, ¿qué partes importantes (fases, herramientas, prácticas) crees que aún le faltan a este pipeline de CI/CD que has construido? (Menciona 2, explica por qué son importantes y cómo podrían implementarse brevemente).
+
+Creo que le faltan principalmente dos cosas.
+
+La primera es monitoreo y alertas. Hoy el pipeline solo sabe si el despliegue salió bien en el momento, pero después de eso nadie vigila la app. Si Producción se cae a las 3 a. m., nos enteramos cuando alguien se queje. Se podría resolver con alarmas de CloudWatch sobre los targets unhealthy del ALB o los errores 5xx, con una notificación por SNS al correo del equipo.
+
+La segunda es seguridad más completa. SonarCloud nos marcó que el ALB usa solo HTTP, y tuvimos que aceptarlo con justificación porque no hay dominio ni certificado. En un caso real habría que poner HTTPS con un certificado de ACM. También habría que escanear la imagen Docker en busca de vulnerabilidades, con una herramienta como Trivy como un paso más del job build-and-test.
+
+---
+
+### VI. ¿Cómo les pareció implementar las dos funcionalidades nuevas con el pipeline completo? ¿Encontraron útil el CI/CD al hacer cambios y despliegues? ¿Qué no fue tan útil? Cada integrante responde con su experiencia propia, identificándose con su nombre.
+
+**Sebastian Herrera**:  Lo que más me sirvió fue poder ver los cambios en Staging y comprobar que todo funcionaba bien antes de salir a Producción. También me gustó que ese paso a Producción tuviera que autorizarlo una persona y que el flujo no siguiera solo, como si nada. Otra cosa útil fue poder volver a correr solo los jobs que fallaron, sin esperar a que se repitiera todo desde cero.
+
+Lo más engorroso fue SonarCloud. A veces había inconsistencias en las claves (la organización y el project key) y es fácil confundirse, sobre todo cuando el nombre es casi el mismo pero con mayúsculas o puntuación distinta. Eso me hizo perder tiempo en algo que no era del código. En cuanto al tiempo, el pipeline completo se demora aproximadamente 8 minutos, y el paso que más tarda es el despliegue a Producción.
+
+**Juan José**: Hacer las dos funcionalidades nuevas me permitió ver cómo se desencadena de forma automática toda la parte operativa: se ejecutan las pruebas, se despliega en Staging y, después de la aprobación, todo llega a Producción. Lo que no me pareció tan útil fue tener que aprobar manualmente el paso a Producción, porque frena bastante un proceso que, por lo demás, es completamente automático.
+
+**Julian Giraldo**: Implementar las dos funcionalidades con el pipeline completo fue muy útil. Solo escribimos el código y las pruebas, y al hacer push todo lo demás se ejecutó solo: formato, pruebas, análisis de SonarCloud y despliegue en Staging y Producción. El CI/CD nos dio confianza, porque cualquier error se detectaba antes de llegar a Producción.
+
+Lo que no fue tan útil fue la aprobación manual para pasar a Producción, que frena un proceso que por lo demás es automático. Tiene sentido como control en un entorno real, pero se siente innecesaria en cambios pequeños.
+
+---
+
+### VII. Con la aprobación manual, ¿su pipeline implementa Entrega Continua o Despliegue Continuo? ¿Por qué? ¿Qué revisaron en Staging antes de aprobar el paso a Producción? Si una versión nueva no lograra pasar el health check, ¿qué haría ECS y cómo lo detectaría el pipeline?
+
+Con la aprobación manual, el pipeline implementa Entrega Continua y no Despliegue Continuo. Todo el flujo es automático hasta Staging. Al hacer push a main se corren las pruebas, se construye y publica la imagen, se despliega en Staging con Terraform y se ejecutan las pruebas de aceptación. El paso a Producción, en cambio, usa el ambiente production de GitHub, que exige que una persona lo apruebe antes de continuar. Así, cada versión queda siempre lista para salir, pero alguien decide cuándo. En el Despliegue Continuo no existiría esa pausa, y todo cambio que pasara las pruebas llegaría solo a Producción. El README del proyecto lo describe casi igual, cuando dice que en ese paso el pipeline pasa de Despliegue Continuo a Entrega Continua.
+
+Antes de aprobar, el pipeline dejaba listo en Staging todo lo necesario para revisar. Primero esperaba hasta 5 minutos a que la ruta /health respondiera con el SHA del commit nuevo, de modo que las pruebas corrieran contra la versión correcta y no contra la anterior. Después ejecutaba las pruebas de aceptación contra la URL pública del balanceador de carga en AWS, que recorren los flujos completos de la calculadora en un ambiente real. Por último, subía el reporte staging-acceptance-report.html como artefacto. Además, la URL de Staging aparece en el README, así que también se podía abrir la calculadora a mano. Ni el repositorio ni la sesión registran qué revisó cada persona manualmente antes de aprobar, así que eso lo tendrían que confirmar ustedes.
+
+Si una versión nueva no lograra pasar el health check, ECS no la dejaría reemplazar a la actual. El balanceador consulta /health cada 30 segundos y espera una respuesta 200, y tras 3 fallos seguidos marca la tarea como no saludable. ECS arranca la versión nueva sin apagar la vieja, porque el servicio exige 100% de tareas saludables y permite hasta 200% mientras tanto. Como el servicio tiene activado el circuit breaker con rollback, cuando los intentos fallan repetidamente ECS da el despliegue por fallido y vuelve a la versión anterior. Durante todo ese proceso los usuarios siguen siendo atendidos por la versión vieja.
+
+El pipeline lo detecta porque el servicio de Terraform tiene wait_for_steady_state = true, lo que hace que el terraform apply no termine hasta que el despliegue se estabilice. Si ECS hace rollback, el servicio nunca llega al estado esperado con la versión nueva, y el apply falla o se agota. Entonces el job deploy-production se pone en rojo y el smoke-test-production no se ejecuta. Además, el pipeline vuelve a consultar /health esperando el SHA nuevo, y si tras los 5 minutos todavía responde la versión vieja, ese paso también falla.
+
+
