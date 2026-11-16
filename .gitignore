@@ -37,6 +37,3 @@ crash.log
 # Reportes de las pruebas contra los ambientes desplegados
 staging-acceptance-report.html
 smoke-report.html
-
-# macOS
-.DS_Store
